@@ -7,7 +7,7 @@ async function connect(){
     const enc=encodeURIComponent(process.env.password);
     const path=`mongodb+srv://java_refresh:${enc}@cluster0.t0mdssq.mongodb.net/?appName=Cluster0`;
     try{
-        const connect=mongoose.connect(path);
+        const connect=await mongoose.connect(path);
         if(connect){
             console.log("success");
         }
