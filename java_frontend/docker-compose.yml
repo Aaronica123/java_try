@@ -1,19 +1,18 @@
 services:
-  networks:
-    java_net:
-      driver:bridge
+  
   
   java1:
-    image: javac
+    image: java_c
     container_name: java1
     ports:
-      -"101:3001"
-    environment:
-      - name=value
+      - "101:3001"
     env_file:
       - .env
     networks:
-      - java_net
+      - java_net12
+networks:
+    java_net12:
+      driver: bridge
     
 
 
