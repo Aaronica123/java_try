@@ -16,13 +16,18 @@ async function Register(req,res){
             password:enc
 
         });
-        console.log(`success ${user.user_id}`);
-        res.status(201).json({"message":"User successfully created"});
+        if(user){
+             console.log(`success ${user.user_id}`);
+             return res.status(201).json({"message":"User successfully created"});
+        }
+       
+       
     }
     catch(error){
-         
-        
-            console.log("server error"+error.message);
+        if(error.status===11000){
+            return console.log("duplicate fields");
+        }
+           return console.log("server error"+error.message);
         
     }
 

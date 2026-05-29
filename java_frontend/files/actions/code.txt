@@ -1,0 +1,129 @@
+import express from 'express';
+import session from 'express-session';
+import cookieParser from 'cookie-parser';
+
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(cookieParser());
+
+// Session configuration
+app.use(session({
+    secret: 'your-super-secret-key-change-this-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days (keeps user logged in)
+        httpOnly: true,  // Prevents XSS attacks
+        secure: false,   // Set true if using HTTPS
+        sameSite: 'lax'  // CSRF protection
+    },
+    name: 'sessionId'    // Cookie name
+}));
+
+// Start session (login)
+app.post('/api/login', (req, res) => {
+    try {
+        const { user_id, full_name, email } = req.body;
+        
+        // Store user data in session
+        req.session.user = {
+            user_id,
+            full_name,
+            email,
+            loggedInAt: new Date().toISOString()
+        };
+        
+        // Also store in cookie for additional persistence (optional)
+        res.cookie('userEmail', email, {
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            httpOnly: false // Can be read by frontend if needed
+        });
+        
+        console.log(`User logged in: ${full_name}`);
+        
+        res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            user: req.session.user
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Check if user is logged in (for page reloads/tab opens)
+app.get('/api/check-session', (req, res) => {
+    try {
+        if (req.session.user) {
+            // User is logged in
+            res.status(200).json({
+                loggedIn: true,
+                user: req.session.user
+            });
+        } else {
+            res.status(200).json({
+                loggedIn: false,
+                message: 'No active session'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get current user data
+app.get('/api/user', (req, res) => {
+    try {
+        if (req.session.user) {
+            res.status(200).json(req.session.user);
+        } else {
+            res.status(401).json({ error: 'Not logged in' });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// End session (logout)
+app.post('/api/logout', (req, res) => {
+    try {
+        req.session.destroy((err) => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            
+            // Clear the optional cookie
+            res.clearCookie('sessionId');
+            res.clearCookie('userEmail');
+            
+            console.log("Session cleared");
+            
+            res.status(200).json({
+                success: true,
+                message: 'Logged out successfully'
+            });
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Protected route example
+app.get('/api/dashboard', (req, res) => {
+    if (!req.session.user) {
+        return res.status(401).json({ error: 'Please login first' });
+    }
+    
+    res.json({
+        message: `Welcome back ${req.session.user.full_name}!`,
+        user: req.session.user
+    });
+});
+
+// Start server
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});

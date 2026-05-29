@@ -1,0 +1,185 @@
+ store: MongoStore.create({
+            mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/session_db',
+            collectionName: 'express_sessions'
+        }),
+        
+
+        // sessionManager.js
+const express = require('express');
+const session = require('express-session');
+const MongoStore = require('connect-mongo');
+const mongoose = require('mongoose');
+
+const app = express();
+
+// Session configuration that automatically handles database storage
+const sessionConfig = {
+    secret: process.env.PASSWORD || 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+        mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/session_db',
+        collectionName: 'sessions', // This will be created automatically
+        ttl: 100, // Session TTL in seconds (matches your 100000ms maxAge)
+        autoRemove: 'native', // Automatically remove expired sessions
+        touchAfter: 0 // Always update session
+    }),
+    cookie: {
+        maxAge: 100000, // 100 seconds as per your requirement
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    },
+    name: "cookie_data"
+};
+
+// Apply session middleware
+app.use(session(sessionConfig));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Function to create session and store in database
+export async function sess_in(req, body) {
+    const { user_id, full_name, email } = body;
+    
+    try {
+        // Validate input
+        if (!user_id || !full_name || !email) {
+            throw new Error("Missing required user data");
+        }
+
+        // Store user data in session - this automatically saves to MongoDB
+        const now = new Date().toUTCString();
+        req.session.user = {
+            user_id: user_id,
+            full_name: full_name,
+            email: email,
+            saved: now
+        };
+        
+        // The session is automatically saved to MongoDB by express-session
+        // No manual database insertion needed!
+        
+        console.log("Session and cookie created");
+        console.log("Session ID:", req.session.id);
+        console.log("Session automatically stored in MongoDB");
+        
+        return {
+            success: true,
+            message: "Session and cookie created",
+            sessionId: req.session.id,
+            sessionData: req.session.user
+        };
+        
+    } catch (error) {
+        console.error("Session creation error:", error.message);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
+// Function to validate session
+export async function validateSession(req) {
+    try {
+        // Check if session exists and has user data
+        if (!req.session || !req.session.user) {
+            return {
+                valid: false,
+                message: "No active session found"
+            };
+        }
+        
+        // Session is automatically validated by express-session
+        // The cookie expiration and database session are handled automatically
+        
+        return {
+            valid: true,
+            sessionId: req.session.id,
+            user: req.session.user,
+            cookie: req.session.cookie
+        };
+    } catch (error) {
+        console.error("Session validation error:", error.message);
+        return {
+            valid: false,
+            error: error.message
+        };
+    }
+}
+
+// Function to destroy session
+export async function sess_out(req) {
+    return new Promise((resolve, reject) => {
+        req.session.destroy((err) => {
+            if (err) {
+                console.error("Session destruction error:", err.message);
+                resolve({
+                    success: false,
+                    error: err.message
+                });
+            } else {
+                resolve({
+                    success: true,
+                    message: "Session destroyed successfully"
+                });
+            }
+        });
+    });
+}
+
+// Helper function to get session from database directly (for debugging)
+export async function getSessionFromDB(sessionId) {
+    try {
+        const db = mongoose.connection.db;
+        const collection = db.collection('sessions');
+        const session = await collection.findOne({ _id: sessionId });
+        return session;
+    } catch (error) {
+        console.error("Error fetching session from DB:", error.message);
+        return null;
+    }
+}
+
+// Helper function to get all active sessions (admin only)
+export async function getAllActiveSessions() {
+    try {
+        const db = mongoose.connection.db;
+        const collection = db.collection('sessions');
+        const sessions = await collection.find({}).toArray();
+        return sessions;
+    } catch (error) {
+        console.error("Error fetching sessions:", error.message);
+        return [];
+    }
+}
+
+// Optional: Add a user reference in a separate users collection
+// This is for user management, not session storage
+const userSchema = new mongoose.Schema({
+    user_id: { type: String, required: true, unique: true },
+    full_name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    created_at: { type: Date, default: Date.now },
+    last_session_id: { type: String }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Optional: Function to save user info separately
+export async function saveUserInfo(user_id, full_name, email) {
+    try {
+        const user = await User.findOneAndUpdate(
+            { user_id: user_id },
+            { full_name, email, updated_at: new Date() },
+            { upsert: true, new: true }
+        );
+        return user;
+    } catch (error) {
+        console.error("Error saving user:", error.message);
+        return null;
+    }
+}
+
+export default app;
